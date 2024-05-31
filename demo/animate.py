@@ -71,19 +71,23 @@ class MagicAnimate():
 
         ### Load controlnet
         controlnet   = ControlNetModel.from_pretrained(config.pretrained_controlnet_path)
+        keypoint_controlnet = ControlNetModel.from_pretrained("lllyasviel/control_v11p_sd15_openpose")
+        
 
         vae.to(torch.float16)
         unet.to(torch.float16)
         text_encoder.to(torch.float16)
         controlnet.to(torch.float16)
+        keypoint_controlnet.to(torch.float16)
         self.appearance_encoder.to(torch.float16)
         
         unet.enable_xformers_memory_efficient_attention()
         self.appearance_encoder.enable_xformers_memory_efficient_attention()
         controlnet.enable_xformers_memory_efficient_attention()
+        keypoint_controlnet.enable_xformers_memory_efficient_attention()
 
         self.pipeline = AnimationPipeline(
-            vae=vae, text_encoder=text_encoder, tokenizer=tokenizer, unet=unet, controlnet=controlnet,
+            vae=vae, text_encoder=text_encoder, tokenizer=tokenizer, unet=unet, controlnet=controlnet, keypoint_controlnet=keypoint_controlnet,
             scheduler=DDIMScheduler(**OmegaConf.to_container(inference_config.noise_scheduler_kwargs)),
             # NOTE: UniPCMultistepScheduler
         ).to("cuda")
@@ -125,7 +129,17 @@ class MagicAnimate():
         
         print("Initialization Done!")
         
-    def __call__(self, source_image, motion_sequence, random_seed, step, guidance_scale, size=512):
+    def __call__(self, 
+                 source_image, 
+                 motion_sequence,
+                 random_seed, 
+                 step, 
+                 guidance_scale, 
+                 motion_sequence_keypoints=None,
+                 size=512):
+            """ 
+            motion_sequence_keypoints : str : path to keypoints video file
+            """
             prompt = n_prompt = ""
             random_seed = int(random_seed)
             step = int(step)
@@ -137,23 +151,40 @@ class MagicAnimate():
                 set_seed(random_seed)
             else:
                 torch.seed()
-
+            
+            # for segmentation control
             if motion_sequence.endswith('.mp4'):
                 control = VideoReader(motion_sequence).read()
                 if control[0].shape[0] != size:
                     control = [np.array(Image.fromarray(c).resize((size, size))) for c in control]
                 control = np.array(control)
+
+            init_latents = None
+            original_length = control.shape[0]
+            if control.shape[0] % self.L > 0:
+                control = np.pad(control, ((0, self.L-control.shape[0] % self.L), (0, 0), (0, 0), (0, 0)), mode='edge')
+                
+            # for keypoints control
+            if motion_sequence_keypoints and motion_sequence_keypoints.endswith('.mp4'):
+                control_keypoints = VideoReader(motion_sequence_keypoints).read()
+                if control_keypoints[0].shape[0] != size:
+                    control_keypoints = [np.array(Image.fromarray(c).resize((size, size))) for c in control_keypoints]
+                control_keypoints = np.array(control_keypoints)
+                if control_keypoints.shape[0] % self.L > 0:
+                    control_keypoints = np.pad(control_keypoints, ((0, self.L-control_keypoints.shape[0] % self.L), (0, 0), (0, 0), (0, 0)), mode='edge')
+            
+            
             
             if source_image.shape[0] != size:
                 source_image = np.array(Image.fromarray(source_image).resize((size, size)))
             H, W, C = source_image.shape
             
-            init_latents = None
-            original_length = control.shape[0]
-            if control.shape[0] % self.L > 0:
-                control = np.pad(control, ((0, self.L-control.shape[0] % self.L), (0, 0), (0, 0), (0, 0)), mode='edge')
+                
+                
+                
             generator = torch.Generator(device=torch.device("cuda:0"))
             generator.manual_seed(torch.initial_seed())
+            
             sample = self.pipeline(
                 prompt,
                 negative_prompt         = n_prompt,
@@ -163,6 +194,7 @@ class MagicAnimate():
                 height                  = H,
                 video_length            = len(control),
                 controlnet_condition    = control,
+                controlnet_condition_keypoints = control_keypoints, # TODO: add the preprocessing for keypoints in above lines
                 init_latents            = init_latents,
                 generator               = generator,
                 appearance_encoder       = self.appearance_encoder, 

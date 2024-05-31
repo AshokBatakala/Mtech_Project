@@ -81,6 +81,7 @@ class AnimationPipeline(DiffusionPipeline):
         tokenizer: CLIPTokenizer,
         unet: UNet3DConditionModel,
         controlnet: ControlNetModel,
+        keypoint_controlnet: ControlNetModel,
         scheduler: Union[
             DDIMScheduler,
             PNDMScheduler,
@@ -146,7 +147,9 @@ class AnimationPipeline(DiffusionPipeline):
             tokenizer=tokenizer,
             unet=unet,
             controlnet=controlnet,
+            keypoint_controlnet=keypoint_controlnet,
             scheduler=scheduler,
+            
         )
         self.vae_scale_factor = 2 ** (len(self.vae.config.block_out_channels) - 1)
 
@@ -541,6 +544,7 @@ class AnimationPipeline(DiffusionPipeline):
         callback: Optional[Callable[[int, int, torch.FloatTensor], None]] = None,
         callback_steps: Optional[int] = 1,
         controlnet_condition: list = None,
+        controlnet_condition_keypoints: list = None, # for controlnet_keypoints
         controlnet_conditioning_scale: float = 1.0,
         context_frames: int = 16,
         context_stride: int = 1,
@@ -605,6 +609,9 @@ class AnimationPipeline(DiffusionPipeline):
         # Prepare video
         assert num_videos_per_prompt == 1   # FIXME: verify if num_videos_per_prompt > 1 works
         assert batch_size == 1              # FIXME: verify if batch_size > 1 works
+        
+        
+        # controlnet condition
         control = self.prepare_condition(
                 condition=controlnet_condition,
                 device=device,
@@ -613,6 +620,17 @@ class AnimationPipeline(DiffusionPipeline):
                 do_classifier_free_guidance=do_classifier_free_guidance,
             )
         controlnet_uncond_images, controlnet_cond_images = control.chunk(2)
+        
+        # keypoints controlnet condition
+        control_keypoints = self.prepare_condition(
+                condition=controlnet_condition_keypoints,
+                device=device,
+                dtype=controlnet.dtype,
+                num_videos_per_prompt=num_videos_per_prompt,
+                do_classifier_free_guidance=do_classifier_free_guidance,
+            )
+        controlnet_uncond_images_keypoints, controlnet_cond_images_keypoints = control_keypoints.chunk(2)
+        
 
         # Prepare timesteps
         self.scheduler.set_timesteps(num_inference_steps, device=device)
@@ -694,6 +712,8 @@ class AnimationPipeline(DiffusionPipeline):
                 b, c, f, h, w = controlnet_latent_input.shape
                 controlnet_latent_input = rearrange(controlnet_latent_input, "b c f h w -> (b f) c h w")
                 
+                
+                
                 # controlnet inference
                 down_block_res_samples, mid_block_res_sample = self.controlnet(
                     controlnet_latent_input,
@@ -703,6 +723,22 @@ class AnimationPipeline(DiffusionPipeline):
                     conditioning_scale=controlnet_conditioning_scale,
                     return_dict=False,
                 )
+                
+                # controlnet keypoints inference
+                down_block_res_samples_keypoints, mid_block_res_sample_keypoints = self.keypoint_controlnet(
+                    controlnet_latent_input,
+                    t,
+                    encoder_hidden_states=torch.cat([controlnet_text_embeddings_c[c] for c in context]),
+                    controlnet_cond=torch.cat([controlnet_cond_images_keypoints[c] for c in context]),
+                    conditioning_scale=controlnet_conditioning_scale,
+                    return_dict=False,
+                )
+                
+                # add both controlnet and keypoints controlnet residuals ; weights are not used
+                down_block_res_samples = [res1 + res2 for res1, res2 in zip(down_block_res_samples, down_block_res_samples_keypoints)]
+                mid_block_res_sample = mid_block_res_sample + mid_block_res_sample_keypoints
+                
+                
 
                 for j, k in enumerate(np.concatenate(np.array(context))):
                     controlnet_res_samples_cache_dict[k] = ([sample[j:j+1] for sample in down_block_res_samples], mid_block_res_sample[j:j+1])
