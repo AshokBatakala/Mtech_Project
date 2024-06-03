@@ -136,7 +136,9 @@ class MagicAnimate():
                  step, 
                  guidance_scale, 
                  motion_sequence_keypoints=None,
-                 size=512):
+                 size=512,
+                 controlnet_weights = [1,1],
+                 ):
             """ 
             motion_sequence_keypoints : str : path to keypoints video file
             """
@@ -201,6 +203,7 @@ class MagicAnimate():
                 reference_control_writer = self.reference_control_writer,
                 reference_control_reader = self.reference_control_reader,
                 source_image             = source_image,
+                controlnet_weights      = controlnet_weights
             ).videos
 
             source_images = np.array([source_image] * original_length)

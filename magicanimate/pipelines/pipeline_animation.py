@@ -558,6 +558,8 @@ class AnimationPipeline(DiffusionPipeline):
         reference_control_reader = None,
         source_image: str = None,
         decoder_consistency = None, 
+        controlnet_weights = [1,1], #weights for Segmentation mask controlnet and keypoints controlnet
+        
         **kwargs,
     ):
         """
@@ -566,6 +568,11 @@ class AnimationPipeline(DiffusionPipeline):
         - controlnet_conditioning_scale : conditioning scale for controlnet
         - init_latents                  : initial latents to begin with (used along with invert())
         - num_actual_inference_steps    : number of actual inference steps (while total steps is num_inference_steps) 
+        
+        Args added by Ashok:
+        controlnet_condition_keypoints : keypoints for keypoints controlnet
+        
+        
         """
         controlnet = self.controlnet
 
@@ -735,8 +742,16 @@ class AnimationPipeline(DiffusionPipeline):
                 )
                 
                 # add both controlnet and keypoints controlnet residuals ; weights are not used
-                down_block_res_samples = [res1 + res2 for res1, res2 in zip(down_block_res_samples, down_block_res_samples_keypoints)]
-                mid_block_res_sample = mid_block_res_sample + mid_block_res_sample_keypoints
+
+                
+                # down_block_res_samples = [res1 + res2 for res1, res2 in zip(down_block_res_samples, down_block_res_samples_keypoints)]
+                # mid_block_res_sample = mid_block_res_sample + mid_block_res_sample_keypoints
+                
+                # controlnet_weights = [1,1]
+                w1, w2 = controlnet_weights
+                down_block_res_samples = [res1 * w1 + res2 * w2 for res1, res2 in zip(down_block_res_samples, down_block_res_samples_keypoints)]
+                mid_block_res_sample = mid_block_res_sample * w1 + mid_block_res_sample_keypoints * w2
+                
                 
                 
 
