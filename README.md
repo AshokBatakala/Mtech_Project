@@ -1,5 +1,14 @@
 <!-- # magic-edit.github.io -->
 
+
+# usage 
+1. clone this repo
+2. copy the weights of pretrained models folder
+
+
+
+
+
 <p align="center">
 
   <h2 align="center">MagicAnimate: Temporally Consistent Human Image Animation using Diffusion Model</h2>
