@@ -6,7 +6,7 @@ import os
 
 
 # RADIUS will change the width of the keypoints, lines and circles
-RADIUS = 1
+RADIUS = 2
 eps = 0.01
 
 def padRightDownCorner(img, stride, padValue):
@@ -38,7 +38,13 @@ def transfer(model, model_weights):
         transfered_model_weights[weights_name] = model_weights['.'.join(weights_name.split('.')[1:])]
     return transfered_model_weights
 
-def draw_bodypose(canvas, candidate, subset,radius=RADIUS):
+def draw_bodypose(canvas, candidate, subset,radius=RADIUS,
+                  DONT_DRAW = True):
+    
+    # for debug only
+    # if DONT_DRAW:
+    #     canvas = (canvas * 0.6).astype(np.uint8)
+    #     return canvas
     #Ashok debug
     print("drawing the keypoints")
     H, W, C = canvas.shape

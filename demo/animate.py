@@ -138,6 +138,8 @@ class MagicAnimate():
                  motion_sequence_keypoints=None,
                  size=512,
                  controlnet_weights = [1,1],
+                 return_raw_output = False,
+                 save_only_output = False,
                  ):
             """ 
             motion_sequence_keypoints : str : path to keypoints video file
@@ -206,6 +208,9 @@ class MagicAnimate():
                 controlnet_weights      = controlnet_weights
             ).videos
 
+            if return_raw_output: 
+                return sample
+            
             source_images = np.array([source_image] * original_length)
             source_images = rearrange(torch.from_numpy(source_images), "t h w c -> 1 c t h w") / 255.0
             samples_per_video.append(source_images)
@@ -222,9 +227,12 @@ class MagicAnimate():
             time_str = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
             savedir = f"demo/outputs"
             animation_path = f"{savedir}/{time_str}.mp4"
+            
+            only_result_path = f"{savedir}/{time_str}_result.mp4"
 
             os.makedirs(savedir, exist_ok=True)
             save_videos_grid(samples_per_video, animation_path)
+            save_videos_grid(samples_per_video[-1:], only_result_path)
             
             return animation_path
             
